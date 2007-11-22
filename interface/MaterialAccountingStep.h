@@ -1,6 +1,7 @@
 #ifndef MaterialAccountingStep_h
 #define MaterialAccountingStep_h
 
+#include <utility>
 #include "DataFormats/GeometryVector/interface/GlobalPoint.h"
 
 // struct to keep material accounting informations on a per-step basis
@@ -59,11 +60,36 @@ public:
     return m_out;
   }
   
+  /// split the step (0..1) in (0..f) + (f..1) using linear interpolation
+  std::pair<MaterialAccountingStep, MaterialAccountingStep> split( double fraction ) const {
+    // no check is done to ensure that 0 <= f <= 1 !
+    GlobalPoint limit(
+        m_in.x() * fraction + m_out.x()  * (1. - fraction),
+        m_in.y() * fraction + m_out.y()  * (1. - fraction),
+        m_in.z() * fraction + m_out.z()  * (1. - fraction)
+    );
+
+    MaterialAccountingStep part1( fraction * m_length,
+                                  fraction * m_radiationLengths,
+                                  fraction * m_energyLoss,
+                                  m_in,
+                                  limit );
+
+    MaterialAccountingStep part2( (1 - fraction) * m_length,
+                                  (1 - fraction) * m_radiationLengths,
+                                  (1 - fraction) * m_energyLoss,
+                                  limit,
+                                  m_out );
+    return std::make_pair( part1, part2 );
+  }
+    
   /// assignement operator
   MaterialAccountingStep & operator=( const MaterialAccountingStep & step ) {
     m_length           = step.m_length;
     m_radiationLengths = step.m_radiationLengths;
     m_energyLoss       = step.m_energyLoss;
+    m_in               = step.m_in;
+    m_out              = step.m_out;
     return *this;
   }
   
@@ -72,6 +98,14 @@ public:
     m_length           += step.m_length;
     m_radiationLengths += step.m_radiationLengths;
     m_energyLoss       += step.m_energyLoss;
+
+    // assume that perp2 is 0 only for uninitialized steps
+    if ((m_in.perp2() == 0.0) or (step.m_in.perp2() < m_in.perp2()))
+      m_in = step.m_in;
+
+    if ((m_out.perp2() == 0.0) or (step.m_out.perp2() > m_out.perp2()))
+      m_out = step.m_out;
+    
     return *this;
   }
   
@@ -80,6 +114,14 @@ public:
     m_length           -= step.m_length;
     m_radiationLengths -= step.m_radiationLengths;
     m_energyLoss       -= step.m_energyLoss;
+
+    // can anything more sensible be done for m_in and/or m_out ?
+    if ((step.m_in.perp2() <= m_in.perp2()) and (step.m_out.perp2() >= m_in.perp2()))
+      m_in = step.m_out;
+
+    if ((step.m_out.perp2() >= m_out.perp2()) and (step.m_in.perp2() <= m_out.perp2()))
+      m_out = step.m_in;
+      
     return *this;
   }
   
